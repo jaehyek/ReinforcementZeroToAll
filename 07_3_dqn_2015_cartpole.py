@@ -21,8 +21,18 @@ import dqn
 import gym
 from typing import List
 
-env = gym.make('CartPole-v0')
+gym.envs.register(
+    id='CartPole-v2',
+    entry_point='gym.envs.classic_control:CartPoleEnv',
+    tags={'wrapper_config.TimeLimit.max_episode_steps': 5000},
+    reward_threshold=4750.0,
+)
+
+env = gym.make('CartPole-v2')
 env = gym.wrappers.Monitor(env, directory="gym-results/", force=True)
+
+# episode의 max steps을 수정할 수 있다.
+
 
 # Constants defining our neural network
 INPUT_SIZE = env.observation_space.shape[0]
@@ -31,8 +41,9 @@ OUTPUT_SIZE = env.action_space.n
 DISCOUNT_RATE = 0.99
 REPLAY_MEMORY = 50000
 BATCH_SIZE = 64
-TARGET_UPDATE_FREQUENCY = 5
-MAX_EPISODES = 5000
+MINI_BATCH_SIZE = 8
+TARGET_UPDATE_FREQUENCY = 3
+MAX_EPISODES = 10000
 
 
 def replay_train(mainDQN: dqn.DQN, targetDQN: dqn.DQN, train_batch: list) -> float:
@@ -56,7 +67,8 @@ def replay_train(mainDQN: dqn.DQN, targetDQN: dqn.DQN, train_batch: list) -> flo
 
     X = states
 
-    Q_target = rewards + DISCOUNT_RATE * np.max(targetDQN.predict(next_states), axis=1) * ~done
+    temppredict = targetDQN.predict(next_states)
+    Q_target = rewards + DISCOUNT_RATE * np.max(temppredict, axis=1) * ~done
 
     y = mainDQN.predict(states)
     y[np.arange(len(X)), actions] = Q_target
@@ -111,16 +123,30 @@ def bot_play(mainDQN: dqn.DQN, env: gym.Env) -> None:
             break
 
 
-def main():
+def main(strfilename=""):
+
+    if len(strfilename) != 0:
+
+        with tf.Session() as sess:
+            mainDQN = dqn.DQN(sess, INPUT_SIZE, OUTPUT_SIZE, name="main")
+            targetDQN = dqn.DQN(sess, INPUT_SIZE, OUTPUT_SIZE, name="target")
+            saver = tf.train.Saver()
+            saver.restore(sess, strfilename)
+            bot_play(mainDQN, env)
+
     # store the previous observations in replay memory
     replay_buffer = deque(maxlen=REPLAY_MEMORY)
 
     last_100_game_reward = deque(maxlen=100)
 
+    save_file = './model.ckpt'
+
     with tf.Session() as sess:
         mainDQN = dqn.DQN(sess, INPUT_SIZE, OUTPUT_SIZE, name="main")
         targetDQN = dqn.DQN(sess, INPUT_SIZE, OUTPUT_SIZE, name="target")
         sess.run(tf.global_variables_initializer())
+
+        saver = tf.train.Saver()
 
         # initial copy q_net -> target_net
         copy_ops = get_copy_var_ops(dest_scope_name="target",
@@ -133,6 +159,8 @@ def main():
             step_count = 0
             state = env.reset()
 
+            reward = 0
+
             while not done:
                 if np.random.rand() < e:
                     action = env.action_space.sample()
@@ -144,20 +172,23 @@ def main():
                 next_state, reward, done, _ = env.step(action)
 
                 if done:  # Penalty
-                    reward = -1
+                    reward = -200
 
                 # Save the experience to our buffer
                 replay_buffer.append((state, action, reward, next_state, done))
 
-                if len(replay_buffer) > BATCH_SIZE:
+                if len(replay_buffer) > BATCH_SIZE  :
                     minibatch = random.sample(replay_buffer, BATCH_SIZE)
                     loss, _ = replay_train(mainDQN, targetDQN, minibatch)
+
 
                 if step_count % TARGET_UPDATE_FREQUENCY == 0:
                     sess.run(copy_ops)
 
                 state = next_state
                 step_count += 1
+
+
 
             print("Episode: {}  steps: {}".format(episode, step_count))
 
@@ -167,10 +198,16 @@ def main():
             if len(last_100_game_reward) == last_100_game_reward.maxlen:
                 avg_reward = np.mean(last_100_game_reward)
 
-                if avg_reward > 199:
+                if avg_reward > 400:
                     print(f"Game Cleared in {episode} episodes with avg reward {avg_reward}")
                     break
 
+        saver.save(sess, save_file)
+        print("---------------------------------------------------------------------------------------")
+        bot_play(mainDQN, env)
+
+
 
 if __name__ == "__main__":
+    # main('./model.ckpt')
     main()
