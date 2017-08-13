@@ -20,6 +20,7 @@ import dqn
 
 import gym
 from typing import List
+import datetime as dt
 
 gym.envs.register(
     id='CartPole-v2',
@@ -29,7 +30,7 @@ gym.envs.register(
 )
 
 env = gym.make('CartPole-v2')
-env = gym.wrappers.Monitor(env, directory="gym-results/", force=True)
+# env = gym.wrappers.Monitor(env, directory="gym-results/", force=True)
 
 # episode의 max steps을 수정할 수 있다.
 
@@ -198,16 +199,18 @@ def main(strfilename=""):
             if len(last_100_game_reward) == last_100_game_reward.maxlen:
                 avg_reward = np.mean(last_100_game_reward)
 
-                if avg_reward > 400:
+                if avg_reward > 800:
                     print(f"Game Cleared in {episode} episodes with avg reward {avg_reward}")
                     break
 
         saver.save(sess, save_file)
         print("---------------------------------------------------------------------------------------")
-        bot_play(mainDQN, env)
+        # bot_play(mainDQN, env)
 
 
 
 if __name__ == "__main__":
     # main('./model.ckpt')
+    prev = dt.datetime.now()
     main()
+    print( dt.datetime.now() - prev )
